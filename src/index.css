@@ -1,0 +1,17 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ✅ CUSTOM CSS THUẦN */
+body {
+    background-image: url("../public/nen-anh.jpg");
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+/* ✅ LỚP ĐỂ ÁP DỤNG MỜ */
+.bg-blur {
+  backdrop-filter: blur(6px);
+  background-color: rgba(255, 255, 255, 0.6); /* nền trắng mờ */
+}
