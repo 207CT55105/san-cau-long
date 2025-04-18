@@ -39,7 +39,7 @@ const LUU_DATA_LS = (data) => {
   localStorage.setItem("danhSachSan", JSON.stringify(data));
 };
 
-// Tính slot trống, loại slot đã quá 15 phút
+// Tính slot trống & loại slot đã quá 15 phút nếu hôm nay
 const tinhSlotTrong = (daDat, ngay) => {
   const start = GIO_MO * 60;
   const end = GIO_DONG * 60;
@@ -74,15 +74,18 @@ const tinhSlotTrong = (daDat, ngay) => {
     });
   }
 
-  // ✅ Nếu hôm nay → loại slot trễ hơn 15 phút
+  // ✅ Nếu hôm nay → loại slot trễ hơn 15 phút thực tế
   const homNay = getToday();
   if (ngay === homNay) {
     const now = new Date();
     const nowMinutes = now.getHours() * 60 + now.getMinutes();
-    return slots.filter((slot) => {
+
+    const filtered = slots.filter((slot) => {
       const batDau = toMinutes(slot.gioBatDau);
-      return batDau > nowMinutes - 15;
+      return batDau >= nowMinutes + 15; // chính xác hơn
     });
+
+    return filtered;
   }
 
   return slots;
@@ -115,7 +118,7 @@ const Home = () => {
     LUU_DATA_LS(danhSachSan);
   }, [danhSachSan]);
 
-  // ✅ CỨNG: Nếu ngày < hôm nay → reset
+  // ✅ Ngăn người nhập ngày quá khứ
   useEffect(() => {
     if (ngayChon < today) {
       alert("⛔ Không thể chọn ngày trong quá khứ!");
@@ -123,7 +126,7 @@ const Home = () => {
     }
   }, [ngayChon, today]);
 
-  // Hiển thị thông báo nếu không còn slot
+  // ✅ Hiển thị thông báo nếu không còn slot
   useEffect(() => {
     const khongConSlot = !danhSachSan.some((san) => {
       const slots = tinhSlotTrong(san.daDat, ngayChon);
@@ -156,8 +159,6 @@ const Home = () => {
 
   const handleNgayChange = (e) => {
     const value = e.target.value;
-    const today = getToday();
-
     if (value < today) {
       alert("❌ Không thể chọn ngày trong quá khứ!");
       setNgayChon(today);
