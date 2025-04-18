@@ -2,12 +2,12 @@ import React, { useEffect, useState } from "react";
 import SanGrid from "../components/SanGrid";
 import PopupDatSan from "../components/PopupDatSan";
 import FooterMap from "../components/FooterMap";
+import TraCuuPopup from "../components/TraCuuPopup";
 
 const GIO_MO = 6;
 const GIO_DONG = 23;
 const MAX_NGAY = 30;
 
-// Helpers
 const toMinutes = (time) => {
   const [h, m] = time.split(":").map(Number);
   return h * 60 + m;
@@ -26,7 +26,6 @@ const congNgay = (ngayISO, soNgay) => {
 
 const getToday = () => new Date().toISOString().split("T")[0];
 
-// LocalStorage
 const LAY_DATA_LS = () => {
   try {
     return JSON.parse(localStorage.getItem("danhSachSan")) || [];
@@ -39,7 +38,6 @@ const LUU_DATA_LS = (data) => {
   localStorage.setItem("danhSachSan", JSON.stringify(data));
 };
 
-// Tính slot trống & loại slot đã quá 15 phút nếu hôm nay
 const tinhSlotTrong = (daDat, ngay) => {
   const start = GIO_MO * 60;
   const end = GIO_DONG * 60;
@@ -74,18 +72,14 @@ const tinhSlotTrong = (daDat, ngay) => {
     });
   }
 
-  // ✅ Nếu hôm nay → loại slot trễ hơn 15 phút thực tế
   const homNay = getToday();
   if (ngay === homNay) {
     const now = new Date();
     const nowMinutes = now.getHours() * 60 + now.getMinutes();
-
-    const filtered = slots.filter((slot) => {
+    return slots.filter((slot) => {
       const batDau = toMinutes(slot.gioBatDau);
-      return batDau >= nowMinutes + 15; // chính xác hơn
+      return batDau >= nowMinutes + 15;
     });
-
-    return filtered;
   }
 
   return slots;
@@ -98,9 +92,13 @@ const Home = () => {
   const [selected, setSelected] = useState(null);
   const [showThongBao, setShowThongBao] = useState(false);
 
+  const [tuKhoa, setTuKhoa] = useState("");
+  const [ketQua, setKetQua] = useState([]);
+  const [showTraCuu, setShowTraCuu] = useState(false);
+  const [isSoDienThoai, setIsSoDienThoai] = useState(false);
+
   const today = getToday();
 
-  // Load sân từ localStorage
   useEffect(() => {
     const data = LAY_DATA_LS();
     if (data.length > 0) {
@@ -113,20 +111,17 @@ const Home = () => {
     }
   }, []);
 
-  // Lưu lại nếu thay đổi
   useEffect(() => {
     LUU_DATA_LS(danhSachSan);
   }, [danhSachSan]);
 
-  // ✅ Ngăn người nhập ngày quá khứ
   useEffect(() => {
     if (ngayChon < today) {
-      alert("⛔ Không thể chọn ngày trong quá khứ!");
+      alert("Không thể chọn ngày trong quá khứ!");
       setNgayChon(today);
     }
   }, [ngayChon, today]);
 
-  // ✅ Hiển thị thông báo nếu không còn slot
   useEffect(() => {
     const khongConSlot = !danhSachSan.some((san) => {
       const slots = tinhSlotTrong(san.daDat, ngayChon);
@@ -147,33 +142,63 @@ const Home = () => {
     if (idx === -1) return;
 
     ds[idx].daDat.push({
+      ten: data.ten,
+      soDienThoai: data.soDienThoai,
       ngay: data.ngay,
       gioBatDau: data.gioBatDau,
       gioKetThuc: data.gioKetThuc,
+      tongTien: data.tongTien,
     });
 
     setDanhSachSan(ds);
     setPopup(false);
-    alert("✅ Đặt sân thành công!");
+    alert(" Đặt sân thành công!");
   };
 
   const handleNgayChange = (e) => {
     const value = e.target.value;
     if (value < today) {
-      alert("❌ Không thể chọn ngày trong quá khứ!");
+      alert(" Không thể chọn ngày trong quá khứ!");
       setNgayChon(today);
     } else {
       setNgayChon(value);
     }
   };
 
-  const danhSachSanRender =
-    ngayChon < today
-      ? []
-      : danhSachSan.map((san) => ({
-          ...san,
-          thoiGian: tinhSlotTrong(san.daDat, ngayChon),
-        }));
+  const handleTraCuu = () => {
+    const ketQuaTim = [];
+    const sdtRegex = /^[0-9]{10}$/;
+
+    danhSachSan.forEach((san) => {
+      san.daDat.forEach((dat) => {
+        if (
+          dat.ten.toLowerCase().includes(tuKhoa.toLowerCase()) ||
+          dat.soDienThoai?.includes(tuKhoa)
+        ) {
+          if (sdtRegex.test(tuKhoa)) {
+            ketQuaTim.push({ ...dat, san: san.ten });
+          } else {
+            ketQuaTim.push({
+              ten: dat.ten,
+              san: san.ten,
+              gioBatDau: dat.gioBatDau,
+              gioKetThuc: dat.gioKetThuc,
+              ngay: dat.ngay,
+            });
+          }
+        }
+      });
+    });
+
+    setIsSoDienThoai(/^[0-9]{10}$/.test(tuKhoa));
+    setKetQua(ketQuaTim);
+    setShowTraCuu(true);
+  };
+
+  const danhSachSanRender = danhSachSan.map((san) => ({
+    ...san,
+    thoiGian: tinhSlotTrong(san.daDat, ngayChon),
+  }));
 
   return (
     <div className="p-6 max-w-4xl mx-auto bg-blur rounded-xl shadow-lg relative">
@@ -188,6 +213,25 @@ const Home = () => {
         max={congNgay(today, MAX_NGAY)}
         onChange={handleNgayChange}
       />
+
+      <div className="flex gap-2 mb-4">
+        <input
+          type="text"
+          placeholder="Nhập tên hoặc số điện thoại"
+          className="border p-2 flex-1 capitalize"
+          value={tuKhoa}
+          onChange={(e) => setTuKhoa(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") handleTraCuu();
+          }}
+        />
+        <button
+          className="bg-black text-white px-4 rounded"
+          onClick={handleTraCuu}
+        >
+          Tìm
+        </button>
+      </div>
 
       {showThongBao && (
         <div className="p-4 bg-yellow-100 text-yellow-800 rounded mb-4 shadow text-center">
@@ -210,6 +254,14 @@ const Home = () => {
           ngayMacDinh={ngayChon}
           onClose={() => setPopup(false)}
           onDat={handleDatSan}
+        />
+      )}
+
+      {showTraCuu && (
+        <TraCuuPopup
+          ketQua={ketQua}
+          isSoDienThoai={isSoDienThoai}
+          onClose={() => setShowTraCuu(false)}
         />
       )}
     </div>
