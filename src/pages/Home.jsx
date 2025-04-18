@@ -8,6 +8,7 @@ const GIO_MO = 6;
 const GIO_DONG = 23;
 const MAX_NGAY = 30;
 
+// Helpers
 const toMinutes = (time) => {
   const [h, m] = time.split(":").map(Number);
   return h * 60 + m;
@@ -24,8 +25,13 @@ const congNgay = (ngayISO, soNgay) => {
   return d.toISOString().split("T")[0];
 };
 
-const getToday = () => new Date().toISOString().split("T")[0];
+const getToday = () => {
+  const tzOffset = 7 * 60 * 60 * 1000; // UTC+7
+  const local = new Date(Date.now() + tzOffset);
+  return local.toISOString().split("T")[0];
+};
 
+// LocalStorage helpers
 const LAY_DATA_LS = () => {
   try {
     return JSON.parse(localStorage.getItem("danhSachSan")) || [];
@@ -38,6 +44,7 @@ const LUU_DATA_LS = (data) => {
   localStorage.setItem("danhSachSan", JSON.stringify(data));
 };
 
+// Tính slot trống và đã đặt
 const tinhSlotTrong = (daDat, ngay) => {
   const start = GIO_MO * 60;
   const end = GIO_DONG * 60;
@@ -61,6 +68,13 @@ const tinhSlotTrong = (daDat, ngay) => {
         trangThai: "trong",
       });
     }
+
+    slots.push({
+      gioBatDau: toTime(d.start),
+      gioKetThuc: toTime(d.end),
+      trangThai: "dat",
+    });
+
     current = Math.max(current, d.end);
   }
 
@@ -72,13 +86,18 @@ const tinhSlotTrong = (daDat, ngay) => {
     });
   }
 
+  // ✅ Nếu là hôm nay → chỉ lọc slot "trống" quá 15 phút
   const homNay = getToday();
   if (ngay === homNay) {
-    const now = new Date();
+    const now = new Date(Date.now() + 7 * 60 * 60 * 1000);
     const nowMinutes = now.getHours() * 60 + now.getMinutes();
+
     return slots.filter((slot) => {
       const batDau = toMinutes(slot.gioBatDau);
-      return batDau >= nowMinutes + 15;
+      if (slot.trangThai === "trong" && batDau < nowMinutes + 15) {
+        return false;
+      }
+      return true;
     });
   }
 
@@ -99,6 +118,7 @@ const Home = () => {
 
   const today = getToday();
 
+  // Load từ localStorage
   useEffect(() => {
     const data = LAY_DATA_LS();
     if (data.length > 0) {
@@ -106,7 +126,7 @@ const Home = () => {
     } else {
       setDanhSachSan([
         { ten: "Sân 1", giaThue: 70000, daDat: [] },
-        { ten: "Sân 2", giaThue: 80000, daDat: [] },
+        { ten: "Sân 2", giaThue: 70000, daDat: [] },
       ]);
     }
   }, []);
@@ -122,10 +142,11 @@ const Home = () => {
     }
   }, [ngayChon, today]);
 
+  // Thông báo không còn slot trống
   useEffect(() => {
     const khongConSlot = !danhSachSan.some((san) => {
       const slots = tinhSlotTrong(san.daDat, ngayChon);
-      return slots.length > 0;
+      return slots.some((s) => s.trangThai === "trong");
     });
 
     setShowThongBao(khongConSlot);
@@ -140,16 +161,38 @@ const Home = () => {
     const ds = [...danhSachSan];
     const idx = ds.findIndex((s) => s.ten === data.san.ten);
     if (idx === -1) return;
-
-    ds[idx].daDat.push({
-      ten: data.ten,
-      soDienThoai: data.soDienThoai,
-      ngay: data.ngay,
-      gioBatDau: data.gioBatDau,
-      gioKetThuc: data.gioKetThuc,
-      tongTien: data.tongTien,
+  
+    const slots = data.slots && data.slots.length > 0
+      ? data.slots
+      : [{
+          gioBatDau: data.gioBatDau,
+          gioKetThuc: data.gioKetThuc,
+        }];
+  
+    slots.forEach((slot) => {
+      if (data.slots && data.slots.length > 0) {
+        data.slots.forEach((s) => {
+          ds[idx].daDat.push({
+            ten: data.ten,
+            soDienThoai: data.soDienThoai,
+            ngay: data.ngay,
+            gioBatDau: s.gioBatDau,
+            gioKetThuc: s.gioKetThuc,
+            tongTien: data.san.giaThue || 70000,
+          });
+        });
+      } else {
+        ds[idx].daDat.push({
+          ten: data.ten,
+          soDienThoai: data.soDienThoai,
+          ngay: data.ngay,
+          gioBatDau: data.gioBatDau,
+          gioKetThuc: data.gioKetThuc,
+          tongTien: data.tongTien,
+        });
+      }
     });
-
+  
     setDanhSachSan(ds);
     setPopup(false);
     alert(" Đặt sân thành công!");
@@ -168,12 +211,13 @@ const Home = () => {
   const handleTraCuu = () => {
     const ketQuaTim = [];
     const sdtRegex = /^[0-9]{10}$/;
-
+  
     danhSachSan.forEach((san) => {
       san.daDat.forEach((dat) => {
+        // Chỉ chấp nhận kết quả nếu tên hoặc sđt trùng khớp chính xác
         if (
-          dat.ten.toLowerCase().includes(tuKhoa.toLowerCase()) ||
-          dat.soDienThoai?.includes(tuKhoa)
+          dat.ten.toLowerCase() === tuKhoa.toLowerCase() ||
+          dat.soDienThoai === tuKhoa
         ) {
           if (sdtRegex.test(tuKhoa)) {
             ketQuaTim.push({ ...dat, san: san.ten });
@@ -189,8 +233,8 @@ const Home = () => {
         }
       });
     });
-
-    setIsSoDienThoai(/^[0-9]{10}$/.test(tuKhoa));
+  
+    setIsSoDienThoai(sdtRegex.test(tuKhoa));
     setKetQua(ketQuaTim);
     setShowTraCuu(true);
   };
@@ -239,23 +283,34 @@ const Home = () => {
         </div>
       )}
 
-      <SanGrid
-        danhSachSan={danhSachSanRender}
-        ngayChon={ngayChon}
-        onClickSlot={handleClickSlot}
-      />
+<SanGrid
+  danhSachSan={danhSachSanRender}
+  ngayChon={ngayChon}
+  onDatNhieuSlot={(slots) => {
+    const [chonDau] = slots;
+
+    setSelected({
+      san: chonDau.san,
+      slot: chonDau.slot,
+      slots: slots.map((s) => s.slot),  // ✅ Truyền danh sách các slot
+    });
+
+    setPopup(true);
+  }}
+/>
 
       <FooterMap />
 
       {popup && selected && (
-        <PopupDatSan
-          san={selected.san}
-          slot={selected.slot}
-          ngayMacDinh={ngayChon}
-          onClose={() => setPopup(false)}
-          onDat={handleDatSan}
-        />
-      )}
+  <PopupDatSan
+    san={selected.san}
+    slot={selected.slot}
+    slots={selected.slots || []}  // <-- THÊM DÒNG NÀY
+    ngayMacDinh={ngayChon}
+    onClose={() => setPopup(false)}
+    onDat={handleDatSan}
+  />
+)}
 
       {showTraCuu && (
         <TraCuuPopup
