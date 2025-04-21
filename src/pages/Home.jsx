@@ -1,11 +1,11 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef, useMemo  } from "react";
 import SanGrid from "../components/SanGrid";
 import PopupDatSan from "../components/PopupDatSan";
 import FooterMap from "../components/FooterMap";
 import TraCuuPopup from "../components/TraCuuPopup";
 
-const GIO_MO = 6;
-const GIO_DONG = 23;
+const GIO_MO = 6;                                                                        // thay đổi giờ mở sân
+const GIO_DONG = 23;                                                                     // thay đổi giờ đóng sân
 const MAX_NGAY = 30;
 
 // Helpers
@@ -31,7 +31,7 @@ const getToday = () => {
   return local.toISOString().split("T")[0];
 };
 
-// LocalStorage helpers
+                                                      // LocalStorage helpers
 const LAY_DATA_LS = () => {
   try {
     return JSON.parse(localStorage.getItem("danhSachSan")) || [];
@@ -44,16 +44,16 @@ const LUU_DATA_LS = (data) => {
   localStorage.setItem("danhSachSan", JSON.stringify(data));
 };
 
-// Tính slot trống và đã đặt
 const tinhSlotTrong = (daDat, ngay) => {
   const start = GIO_MO * 60;
   const end = GIO_DONG * 60;
 
-  const datHomNay = (daDat || []).filter((d) => d.ngay === ngay);
-  const datMins = datHomNay
+  const datTrongNgay = (daDat || []).filter((d) => d.ngay === ngay);
+  const datMins = datTrongNgay
     .map((d) => ({
       start: toMinutes(d.gioBatDau),
       end: toMinutes(d.gioKetThuc),
+      ...d,
     }))
     .sort((a, b) => a.start - b.start);
 
@@ -73,9 +73,12 @@ const tinhSlotTrong = (daDat, ngay) => {
       gioBatDau: toTime(d.start),
       gioKetThuc: toTime(d.end),
       trangThai: "dat",
+      chiaSe: d.chiaSe || false,
+      ten: d.ten || "",
+      soDienThoai: d.soDienThoai || "",
     });
 
-    current = Math.max(current, d.end);
+    current = d.end;
   }
 
   if (current < end) {
@@ -86,23 +89,37 @@ const tinhSlotTrong = (daDat, ngay) => {
     });
   }
 
-  // ✅ Nếu là hôm nay → chỉ lọc slot "trống" quá 15 phút
+  // ✅ Nếu là hôm nay thì xử lý trạng thái các slot trống theo giờ hiện tại
   const homNay = getToday();
   if (ngay === homNay) {
     const now = new Date(Date.now() + 7 * 60 * 60 * 1000);
     const nowMinutes = now.getHours() * 60 + now.getMinutes();
 
-    return slots.filter((slot) => {
+    return slots.map((slot) => {
       const batDau = toMinutes(slot.gioBatDau);
-      if (slot.trangThai === "trong" && batDau < nowMinutes + 15) {
-        return false;
+
+      if (slot.trangThai === "trong") {
+        // Nếu đã quá giờ bắt đầu + 15 phút → chuyển thành "dat"
+        if (nowMinutes < batDau + 15) {
+          return {
+            ...slot,
+            trangThai: "trong",
+            chiaSe: false,
+            ten: "",
+            soDienThoai: "",
+          };
+        }
       }
-      return true;
+
+      return slot;
     });
   }
 
   return slots;
 };
+
+                                                      // Tính slot trống và đã đặt
+                                                      
 
 const Home = () => {
   const [danhSachSan, setDanhSachSan] = useState([]);
@@ -115,18 +132,21 @@ const Home = () => {
   const [ketQua, setKetQua] = useState([]);
   const [showTraCuu, setShowTraCuu] = useState(false);
   const [isSoDienThoai, setIsSoDienThoai] = useState(false);
+  const [version, setVersion] = useState(0);
+  const resetChonSlotRef = useRef(null); 
 
   const today = getToday();
 
-  // Load từ localStorage
+                                                      // Load từ localStorage
   useEffect(() => {
     const data = LAY_DATA_LS();
     if (data.length > 0) {
       setDanhSachSan(data);
     } else {
       setDanhSachSan([
-        { ten: "Sân 1", giaThue: 70000, daDat: [] },
-        { ten: "Sân 2", giaThue: 70000, daDat: [] },
+        { ten: "Sân 1", giaThue: 70000, daDat: [] },                                     // thay đổi giá sân 1
+        { ten: "Sân 2", giaThue: 70000, daDat: [] },                                     // thay đổi giá sân 2
+        //{ ten: "Sân 3", giaThue: 70000, daDat: [] },                                  // thêm sân mới ở đây:
       ]);
     }
   }, []);
@@ -142,7 +162,7 @@ const Home = () => {
     }
   }, [ngayChon, today]);
 
-  // Thông báo không còn slot trống
+                                                    // Thông báo không còn slot trống
   useEffect(() => {
     const khongConSlot = !danhSachSan.some((san) => {
       const slots = tinhSlotTrong(san.daDat, ngayChon);
@@ -162,14 +182,13 @@ const Home = () => {
     const idx = ds.findIndex((s) => s.ten === data.san.ten);
     if (idx === -1) return;
   
-    const slots = data.slots && data.slots.length > 0
+  const slots = data.slots && data.slots.length > 0
       ? data.slots
       : [{
           gioBatDau: data.gioBatDau,
           gioKetThuc: data.gioKetThuc,
         }];
   
-    slots.forEach((slot) => {
       if (data.slots && data.slots.length > 0) {
         data.slots.forEach((s) => {
           ds[idx].daDat.push({
@@ -179,7 +198,10 @@ const Home = () => {
             gioBatDau: s.gioBatDau,
             gioKetThuc: s.gioKetThuc,
             tongTien: data.san.giaThue || 70000,
+            chiaSe: s.chiaSe === true, // ✅ lấy từ từng slot
+            thoiGianDat: Date.now(),
           });
+          
         });
       } else {
         ds[idx].daDat.push({
@@ -189,11 +211,15 @@ const Home = () => {
           gioBatDau: data.gioBatDau,
           gioKetThuc: data.gioKetThuc,
           tongTien: data.tongTien,
+          chiaSe: data.chiaSe === true,
+          thoiGianDat: Date.now(),
         });
       }
-    });
   
     setDanhSachSan(ds);
+
+    if (resetChonSlotRef.current) resetChonSlotRef.current();
+    
     setPopup(false);
     alert(" Đặt sân thành công!");
   };
@@ -214,13 +240,13 @@ const Home = () => {
   
     danhSachSan.forEach((san) => {
       san.daDat.forEach((dat) => {
-        // Chỉ chấp nhận kết quả nếu tên hoặc sđt trùng khớp chính xác
+                                                      // Chỉ chấp nhận kết quả nếu tên hoặc sđt trùng khớp chính xác
         if (
           dat.ten.toLowerCase() === tuKhoa.toLowerCase() ||
           dat.soDienThoai === tuKhoa
         ) {
           if (sdtRegex.test(tuKhoa)) {
-            ketQuaTim.push({ ...dat, san: san.ten });
+            ketQuaTim.push({ ...dat, thoiGianDat: dat.thoiGianDat, san: san.ten });
           } else {
             ketQuaTim.push({
               ten: dat.ten,
@@ -228,6 +254,7 @@ const Home = () => {
               gioBatDau: dat.gioBatDau,
               gioKetThuc: dat.gioKetThuc,
               ngay: dat.ngay,
+              thoiGianDat: dat.thoiGianDat,
             });
           }
         }
@@ -239,13 +266,15 @@ const Home = () => {
     setShowTraCuu(true);
   };
 
-  const danhSachSanRender = danhSachSan.map((san) => ({
-    ...san,
-    thoiGian: tinhSlotTrong(san.daDat, ngayChon),
-  }));
+  const danhSachSanRender = useMemo(() => {
+    return danhSachSan.map((san) => ({
+      ...san,
+      thoiGian: tinhSlotTrong(san.daDat, ngayChon),
+    }));
+  }, [danhSachSan, ngayChon, version]); // ✅ ép render lại khi version thay đổi
 
   return (
-    <div className="p-6 max-w-4xl mx-auto bg-blur rounded-xl shadow-lg relative">
+    <div className="relative min-h-screen p-6 max-w-4xl mx-auto bg-blur rounded-xl shadow-lg">
       <h1 className="text-2xl font-bold mb-4 text-center">Đặt Sân Cầu Lông Victor 🏸</h1>
 
       <label className="block font-medium mb-2">Chọn ngày:</label>
@@ -297,6 +326,7 @@ const Home = () => {
 
     setPopup(true);
   }}
+  onResetSlotDaChon={(resetFn) => (resetChonSlotRef.current = resetFn)}
 />
 
       <FooterMap />
@@ -305,7 +335,7 @@ const Home = () => {
   <PopupDatSan
     san={selected.san}
     slot={selected.slot}
-    slots={selected.slots || []}  // <-- THÊM DÒNG NÀY
+    slots={selected.slots || []}  // 
     ngayMacDinh={ngayChon}
     onClose={() => setPopup(false)}
     onDat={handleDatSan}
@@ -314,10 +344,15 @@ const Home = () => {
 
       {showTraCuu && (
         <TraCuuPopup
-          ketQua={ketQua}
-          isSoDienThoai={isSoDienThoai}
-          onClose={() => setShowTraCuu(false)}
-        />
+        ketQua={ketQua}
+        isSoDienThoai={isSoDienThoai}
+        onClose={() => setShowTraCuu(false)}
+        onCapNhat={(dsMoi) => {
+          setDanhSachSan(dsMoi);
+          LUU_DATA_LS(dsMoi);
+          setVersion(prev => prev + 1); // ✅ ép re-render SanGrid
+        }}
+      />
       )}
     </div>
   );

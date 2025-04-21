@@ -2,10 +2,16 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ✅ Chiều cao toàn trang để popup căn giữa đúng */
+html,
+body,
+#root {
+  height: 100%;
+}
 
 /* ✅ CUSTOM CSS THUẦN */
 body {
-    background-image: url("../public/nen-anh.jpg");
+  background-image: url("../public/nen-anh.jpg");
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
